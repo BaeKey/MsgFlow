@@ -117,20 +117,13 @@ func (n *WeComNotifier) Send(ctx context.Context, msg plugin.Message, config map
 }
 
 // getAccessToken 获取并缓存 access_token，提前 5 分钟刷新。
-// 使用 double-check locking：token 有效时走快速路径（不加锁），仅在需要刷新时加锁。
+// 读取和刷新都受同一把锁保护，避免并发发送时发生数据竞态。
 func (n *WeComNotifier) getAccessToken(ctx context.Context, corpID, corpSecret, baseURL string) (string, error) {
-	// 快速路径：token 仍在有效期内，直接返回，无需加锁。
-	now := time.Now()
-	if n.accessToken != "" && now.Before(n.expiresAt) {
-		return n.accessToken, nil
-	}
-
-	// 慢路径：需要刷新 token，加锁。
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	// 再次检查：可能其他 goroutine 已经在等待锁期间完成了刷新。
-	now = time.Now()
+	// token 仍在有效期内时直接复用。
+	now := time.Now()
 	if n.accessToken != "" && now.Before(n.expiresAt) {
 		return n.accessToken, nil
 	}

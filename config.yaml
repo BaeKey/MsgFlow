@@ -39,12 +39,12 @@ webhooks:
   # 企业微信群机器人 webhook
   wework:
     url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key"
-    body_template: '{"msgtype":"text","text":{"content":"{{.Title}}\n{{.Body}}"}}'
+    body_template: '{"msgtype":"text","text":{"content":{{jsonQuote .Body}}}}'
   # 飞书机器人 webhook
   feishu:
     url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-token"
-    body_template: '{"msg_type":"text","content":{"text":"{{.Title}}\n{{.Body}}"}}'
+    body_template: '{"msg_type":"text","content":{"text":{{jsonQuote .Body}}}}'
   # 钉钉机器人 webhook（markdown 格式示例，标题会加粗）
   dingtalk:
     url: "https://oapi.dingtalk.com/robot/send?access_token=your-token"
-    body_template: '{"msgtype":"markdown","markdown":{"title":"{{.Title}}","text":"### {{.Title}}\n{{.Body}}"}}'
+    body_template: '{"msgtype":"markdown","markdown":{"title":{{jsonQuote .Title}},"text":{{jsonQuote .Body}}}}'

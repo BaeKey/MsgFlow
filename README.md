@@ -109,15 +109,15 @@ webhooks:
   # 企业微信群机器人
   wework:
     url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key"
-    body_template: '{"msgtype":"text","text":{"content":"{{.Title}}\n{{.Body}}"}}'
+    body_template: '{"msgtype":"text","text":{"content":{{jsonQuote .Body}}}}'
   # 飞书机器人
   feishu:
     url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-token"
-    body_template: '{"msg_type":"text","content":{"text":"{{.Title}}\n{{.Body}}"}}'
+    body_template: '{"msg_type":"text","content":{"text":{{jsonQuote .Body}}}}'
   # 钉钉机器人（markdown 格式）
   dingtalk:
     url: "https://oapi.dingtalk.com/robot/send?access_token=your-token"
-    body_template: '{"msgtype":"markdown","markdown":{"title":"{{.Title}}","text":"### {{.Title}}\n{{.Body}}"}}'
+    body_template: '{"msgtype":"markdown","markdown":{"title":{{jsonQuote .Title}},"text":{{jsonQuote .Body}}}}'
 ```
 
 ### 配置规则
@@ -130,7 +130,8 @@ webhooks:
 - `server.retry` 控制发送失败时的重试次数，默认 `2`（即首次 + 2 次重试 = 最多 3 次尝试）
 - `notifiers` 节点下保存各内置渠道的全局配置，按 `map[string]string` 传递给插件
 - `webhooks` 节点下可自定义任意数量的 Webhook 渠道，键名即渠道名
-- `body_template` 使用 Go text/template 语法，可用变量：`{{.Title}}`、`{{.Body}}`
+- `body_template` 使用 Go `text/template` 语法，可用变量：`{{.Title}}`、`{{.Body}}`
+- 为避免引号、换行、反斜杠破坏 JSON 结构，字符串字段建议使用 `{{jsonQuote .Title}}` / `{{jsonQuote .Body}}`
 - 配置中的端口和数字字段统一使用字符串
 
 ## 安装依赖

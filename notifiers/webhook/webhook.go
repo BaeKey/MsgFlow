@@ -5,12 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"sync"
 	"text/template"
 
 	"github.com/go-resty/resty/v2"
 
 	"msgflow/internal/plugin"
 )
+
+// tplCache 缓存已解析的模板，避免每次请求重新解析。
+var tplCache sync.Map
 
 // WebhookNotifier 实现通用 Webhook 推送渠道。
 //
@@ -110,14 +115,24 @@ func (n *WebhookNotifier) Send(ctx context.Context, msg plugin.Message, config m
 }
 
 // renderTemplate 用 Go text/template 渲染自定义请求体。
+// 已解析的模板按原始字符串缓存，避免重复解析。
 func renderTemplate(tpl string, msg plugin.Message) ([]byte, error) {
-	t, err := template.New("webhook").Parse(tpl)
-	if err != nil {
-		return nil, fmt.Errorf("parse template: %w", err)
+	t, ok := tplCache.Load(tpl)
+	if !ok {
+		parsed, err := template.New("webhook").Funcs(template.FuncMap{
+			// jsonQuote 将字符串转成合法 JSON 字符串字面量，避免特殊字符破坏请求体结构。
+			"jsonQuote": strconv.Quote,
+		}).Parse(tpl)
+		if err != nil {
+			return nil, fmt.Errorf("parse template: %w", err)
+		}
+		// 多个 goroutine 同时解析同一模板时，后写入的覆盖先写入的，无影响。
+		tplCache.Store(tpl, parsed)
+		t = parsed
 	}
 
 	var buf bytes.Buffer
-	if err := t.Execute(&buf, templateData{
+	if err := t.(*template.Template).Execute(&buf, templateData{
 		Title: msg.Title,
 		Body:  msg.Body,
 	}); err != nil {

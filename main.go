@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -66,7 +68,7 @@ func main() {
 	httpServer := server.NewHTTPServer(cfg, router)
 
 	// 根据配置选择 TCP 或 Unix socket 监听。
-	ln, err := server.ListenAndServe(httpServer, cfg)
+	ln, serveErrCh, err := server.ListenAndServe(httpServer, cfg)
 	if err != nil {
 		logger.Fatal("start server failed", zap.Error(err))
 	}
@@ -80,14 +82,23 @@ func main() {
 	// 等待中断信号，执行优雅关停。
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-quit
-	logger.Info("shutting down", zap.String("signal", sig.String()))
+
+	select {
+	case err, ok := <-serveErrCh:
+		if ok && err != nil {
+			logger.Fatal("server exited unexpectedly", zap.Error(err))
+		}
+	case sig := <-quit:
+		logger.Info("shutting down", zap.String("signal", sig.String()))
+	}
 
 	// 给进行中的请求 10 秒时间完成。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
-		logger.Error("server shutdown failed", zap.Error(err))
+		if !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("server shutdown failed", zap.Error(err))
+		}
 	}
 
 	// 关闭 listener（Unix socket 模式下会自动删除 socket 文件）。

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -69,8 +70,8 @@ func NewHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {
 // Unix socket 模式：
 //   - 启动前删除残留的 socket 文件
 //   - 设置 socket 文件权限为 0666，允许同机其他用户访问
-//   - 返回 listener 供优雅关停使用
-func ListenAndServe(srv *http.Server, cfg *config.Config) (net.Listener, error) {
+//   - 返回 listener 和服务错误通道供优雅关停使用
+func ListenAndServe(srv *http.Server, cfg *config.Config) (net.Listener, <-chan error, error) {
 	if cfg.IsUnixSocket() {
 		return listenUnix(srv, cfg.Server.UnixSocket)
 	}
@@ -78,13 +79,13 @@ func ListenAndServe(srv *http.Server, cfg *config.Config) (net.Listener, error) 
 }
 
 // listenUnix 在 Unix socket 上启动 HTTP 服务。
-func listenUnix(srv *http.Server, socketPath string) (net.Listener, error) {
+func listenUnix(srv *http.Server, socketPath string) (net.Listener, <-chan error, error) {
 	// 清理残留的 socket 文件（上次异常退出时可能残留）。
 	os.Remove(socketPath)
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 关闭时自动删除 socket 文件。
@@ -93,23 +94,33 @@ func listenUnix(srv *http.Server, socketPath string) (net.Listener, error) {
 	// 设置 socket 文件权限为 0666，允许同机其他用户（如 nginx）连接。
 	if err := os.Chmod(socketPath, 0666); err != nil {
 		ln.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
-	// 异步启动服务，返回 listener 供后续 Shutdown 使用。
-	go srv.Serve(ln)
+	// 异步启动服务，将异常退出错误回传给调用方。
+	errCh := make(chan error, 1)
+	go serveAsync(srv, ln, errCh)
 
-	return ln, nil
+	return ln, errCh, nil
 }
 
 // listenTCP 在 TCP 端口上启动 HTTP 服务。
-func listenTCP(srv *http.Server, cfg *config.Config) (net.Listener, error) {
+func listenTCP(srv *http.Server, cfg *config.Config) (net.Listener, <-chan error, error) {
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	go srv.Serve(ln)
+	errCh := make(chan error, 1)
+	go serveAsync(srv, ln, errCh)
 
-	return ln, nil
+	return ln, errCh, nil
+}
+
+func serveAsync(srv *http.Server, ln net.Listener, errCh chan<- error) {
+	defer close(errCh)
+
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		errCh <- err
+	}
 }
