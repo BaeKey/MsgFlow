@@ -1,0 +1,50 @@
+server:
+  port: "8080"
+  # unix_socket: "/run/msgflow/msgflow.sock"
+  token: "your-secret-token"
+  default_channels:
+    - bark
+  log_level: "error"
+  retry: 2
+
+notifiers:
+  bark:
+    server_url: "https://api.day.app"
+    device_key: "your-device-key"
+
+  email:
+    smtp_host: "smtp.example.com"
+    smtp_port: "465"
+    smtp_user: "sender@example.com"
+    smtp_pass: "your-password"
+    smtp_tls: "true"
+    from: "sender@example.com"
+    default_to: "receiver@example.com"
+
+  wecom:
+    corp_id: "your-corp-id"
+    agent_id: "1000001"
+    corp_secret: "your-corp-secret"
+    default_to_user: "@all"
+    # base_url: "https://qyapi.weixin.qq.com"
+
+  telegram:
+    bot_token: "your-bot-token"
+    chat_id: "your-chat-id"
+    # 自定义 API 地址（国内可用反代或自建 Bot API 服务器）
+    # base_url: "https://api.telegram.org"
+    # parse_mode: "HTML"
+
+webhooks:
+  # 企业微信群机器人 webhook
+  wework:
+    url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key"
+    body_template: '{"msgtype":"text","text":{"content":"{{.Title}}\n{{.Body}}"}}'
+  # 飞书机器人 webhook
+  feishu:
+    url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-token"
+    body_template: '{"msg_type":"text","content":{"text":"{{.Title}}\n{{.Body}}"}}'
+  # 钉钉机器人 webhook（markdown 格式示例，标题会加粗）
+  dingtalk:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=your-token"
+    body_template: '{"msgtype":"markdown","markdown":{"title":"{{.Title}}","text":"### {{.Title}}\n{{.Body}}"}}'

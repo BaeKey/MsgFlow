@@ -1,0 +1,48 @@
+[Unit]
+Description=MsgFlow Message Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/msgflow
+ExecStart=/opt/msgflow/msgflow
+Restart=on-failure
+RestartSec=5s
+
+# 使用专用低权限账户运行，避免长期持有 root 权限。
+User=nobody
+Group=nogroup
+
+# 创建 /run/msgflow 目录用于存放 Unix socket 文件。
+# systemd 会在启动时自动创建、停止时自动清理。
+RuntimeDirectory=msgflow
+RuntimeDirectoryMode=0755
+
+# 收紧进程权限边界。
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+# 允许读取程序目录；运行时目录由 RuntimeDirectory 管理。
+ReadOnlyPaths=/opt/msgflow
+
+# 若配置文件权限为 600，需保证 User 可读；也可改为专用服务账户。
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
