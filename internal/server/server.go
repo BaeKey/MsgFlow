@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +19,11 @@ import (
 
 // New 创建并配置 Gin HTTP 服务器。
 func New(cfg *config.Config, logger *zap.Logger) *gin.Engine {
+	return NewWithContext(context.Background(), cfg, logger)
+}
+
+// NewWithContext 创建并配置 Gin HTTP 服务器，ctx 用于控制通知发送生命周期。
+func NewWithContext(ctx context.Context, cfg *config.Config, logger *zap.Logger) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
@@ -30,7 +37,7 @@ func New(cfg *config.Config, logger *zap.Logger) *gin.Engine {
 	router.Use(middleware.BodyLimit())
 	router.Use(middleware.Logger(logger))
 
-	h := handler.New(cfg, logger)
+	h := handler.NewWithContext(ctx, cfg, logger)
 
 	// 注册标准发送接口。
 	router.POST("/send", h.SendHandler)
@@ -81,7 +88,9 @@ func ListenAndServe(srv *http.Server, cfg *config.Config) (net.Listener, <-chan 
 // listenUnix 在 Unix socket 上启动 HTTP 服务。
 func listenUnix(srv *http.Server, socketPath string) (net.Listener, <-chan error, error) {
 	// 清理残留的 socket 文件（上次异常退出时可能残留）。
-	os.Remove(socketPath)
+	if err := removeStaleUnixSocket(socketPath); err != nil {
+		return nil, nil, err
+	}
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -89,7 +98,12 @@ func listenUnix(srv *http.Server, socketPath string) (net.Listener, <-chan error
 	}
 
 	// 关闭时自动删除 socket 文件。
-	ln.(*net.UnixListener).SetUnlinkOnClose(true)
+	unixLn, ok := ln.(*net.UnixListener)
+	if !ok {
+		ln.Close()
+		return nil, nil, errors.New("unix listener is not *net.UnixListener")
+	}
+	unixLn.SetUnlinkOnClose(true)
 
 	// 设置 socket 文件权限为 0666，允许同机其他用户（如 nginx）连接。
 	if err := os.Chmod(socketPath, 0666); err != nil {
@@ -102,6 +116,23 @@ func listenUnix(srv *http.Server, socketPath string) (net.Listener, <-chan error
 	go serveAsync(srv, ln, errCh)
 
 	return ln, errCh, nil
+}
+
+func removeStaleUnixSocket(socketPath string) error {
+	info, err := os.Lstat(socketPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat unix socket path: %w", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("refusing to remove non-socket file at %s", socketPath)
+	}
+	if err := os.Remove(socketPath); err != nil {
+		return fmt.Errorf("remove stale unix socket: %w", err)
+	}
+	return nil
 }
 
 // listenTCP 在 TCP 端口上启动 HTTP 服务。

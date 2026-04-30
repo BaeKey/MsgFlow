@@ -19,6 +19,16 @@ func (n *BarkNotifier) Name() string {
 	return "bark"
 }
 
+// ValidateConfig 校验 Bark 配置。
+func (n *BarkNotifier) ValidateConfig(config map[string]string) error {
+	serverURL := strings.TrimRight(config["server_url"], "/")
+	deviceKey := strings.Trim(config["device_key"], "/")
+	if serverURL == "" || deviceKey == "" {
+		return fmt.Errorf("bark config missing server_url or device_key")
+	}
+	return nil
+}
+
 // Send 按 Bark API 规范发送消息。
 func (n *BarkNotifier) Send(ctx context.Context, msg plugin.Message, config map[string]string) error {
 	serverURL := strings.TrimRight(config["server_url"], "/")

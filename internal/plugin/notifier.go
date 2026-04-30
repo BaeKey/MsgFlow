@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,12 +19,26 @@ type Message struct {
 	Extra map[string]string
 }
 
+// FormatTextMessage 将标题和正文拼成纯文本消息。
+// 标题存在时，与正文之间保留一个空行。
+func FormatTextMessage(msg Message) string {
+	if strings.TrimSpace(msg.Title) == "" {
+		return msg.Body
+	}
+	return msg.Title + "\n\n" + msg.Body
+}
+
 // Notifier 是所有渠道插件必须实现的接口
 type Notifier interface {
 	// Name 返回渠道唯一标识，与配置文件中的 type 字段对应
 	Name() string
 	// Send 执行发送，config 是该 Notifier 从配置文件读取的原始 map
 	Send(ctx context.Context, msg Message, config map[string]string) error
+}
+
+// ConfigValidator 用于在服务启动前校验通知器配置。
+type ConfigValidator interface {
+	ValidateConfig(config map[string]string) error
 }
 
 // BaseNotifier 提供 HTTP 客户端复用和超时控制的公共能力，
@@ -41,16 +56,51 @@ func (b *BaseNotifier) Client() *resty.Client {
 	return b.client
 }
 
-// Registry 是全局插件注册表
-var registry = map[string]Notifier{}
+var (
+	registryMu sync.RWMutex
+	registry   = map[string]Notifier{}
+	aliases    = map[string]string{}
+)
 
 // Register 将通知器注册到全局表中，键为通知器名称。
 func Register(n Notifier) {
-	registry[n.Name()] = n
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	name := n.Name()
+	registry[name] = n
+	aliases[name] = name
+}
+
+// RegisterAlias 将渠道名绑定到指定通知器类型。
+func RegisterAlias(channelName, notifierName string) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	aliases[channelName] = notifierName
 }
 
 // Get 按名称从全局注册表中获取通知器实例。
 func Get(name string) (Notifier, bool) {
-	n, ok := registry[name]
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	target, ok := aliases[name]
+	if !ok {
+		target = name
+	}
+	n, ok := registry[target]
 	return n, ok
+}
+
+// RegisteredNames 返回所有已注册的通知器类型名称。
+func RegisteredNames() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	names := make([]string, 0, len(registry))
+	for name := range registry {
+		names = append(names, name)
+	}
+	return names
 }
